@@ -1,0 +1,475 @@
+---
+output:
+  pdf_document: default
+  html_document:
+    theme: journal
+    highlight: espresso
+---
+# Assignment 2
+# Benjámin Salga
+
+## Introduction
+Nowadays, no secret acing with cars at a higher level of motorsport comes with a huge amount of money. In our history, some Formula 1 drivers have been considered the highest-paid athletes in the world of sport. The world has changed and today's sportsmen from football and other sports earn more. However, F1 drivers still get a hefty reward after the races. When drivers post images on social media of their lavish homes, fast cars, and hedonistic lifestyle, are great proof of that. On the other side, these people work hard for their money. Driving on such a high level is very exhausting and needs special skills, but everybody deserves the reward? Some drivers earn 3-5 Million dollars others earn 10 times that. Are those drivers 10 times better?
+
+This assignment focuses on uncovering the probability that F1 drivers are getting more rewarded for various explanatory variables: such as the finish position, different teams the driver race with, driver age, and their nationality. For the sake of the analysis, the kaggle F1 world championship dataset was used. It includes information from 1950 to 2021, however, this analysis only focuses on the Hybrid area and on drivers who raced in 2021.
+The hybrid era means the area between 2014 and 2021, where the teams are allowed to use only 1.6-liter hybrid v6 engines. This area has been ended whit the 2021 season, which is why I chose this topic for the analysis.
+
+The information about the wages is collected by myself from Sporttrac year by year(https://www.spotrac.com/formula1/2020/). The earnings contain all the bonuses, but only from Formula 1. Payment from other companies is not included in the salary.
+
+## Data summary and cleaning
+After the data has been loaded downloaded from kaggle (https://www.kaggle.com/rohanrao/formula-1-world-championship-1950-2020), the data was cleaned and merged, after that I checked the summary of the variables (e.g. Finish position at race, Finish position at qualification, Fastest lap times at race, Earned points by the driver, Earned points by teams) I intended to use in our analysis.
+The data summary showed the borders of the data set, which seems to match with reality. Grid, Qulay position and position order is between 1 and 22, which is valid since before 2016 there was a team called Marussia F1. They are the only team in the sport, who did not return to Formula 1 (Many other teams changed their name and owners, only Marussia did not). The Mean shows us that a bigger part of the variable is less than 10 since the analysis focus on drivers in 2021 and 4 World champion were in this season, which cause this change. The same rule is true for the point earned by the drivers' observation since its Mean shows the same pattern, however in this case the Max shows an extreme value since only once at the end of the season in Abu Dhabi, the FIA decided to give double point for the driver this is why instead of the regular 25 points the Max is 50 points.
+
+There is an error in the dataset, which comes from bad recording probably: The 'Wins' variable, the number of first places by teams are not correct. It is proved on the chart (Appendix Chart 1). The provided information by the chart shows that Red Bull has the most wined races with 47 trophies and Mercedes AMG is only third around 27 races, which is interesting since only Hamilton had won more than 60 races during this period. This variable was not used in the analysis and there was no issue with other variables.
+
+After the summary, I filtered for the drivers who raced in 2021 and for the hybrid era (2014-2021). The number of observation became 1547 and 23 variable. for all of our key variables At the merge of the F1 data frame and the new earnings data frame, I was careful to join them year by year, to not merge wrong values in the wrong place.
+Finally, some variables were created: Age variable from date of birth, log of the earnings per year to make analysis easier later.
+
+
+```{r setup, include=FALSE}
+
+
+# clean environment 
+rm(list=ls())
+
+#Please install packages if needed
+# Load packages
+library(AER)
+library(tidyverse)
+library(ggformula)
+library(lspline)
+library(cowplot)
+library(ggpubr)
+library(boot)
+library(estimatr)
+library(huxtable)
+library(stargazer)
+library(modelsummary)
+library(gridExtra)
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(pscl)
+library(mfx)
+library(fixest)
+library(pacman)
+library(extrafont)
+library(plyr)
+library(kableExtra)
+library(janitor)
+
+# download data
+# Before you start to get the data, please download it from:
+# https://www.kaggle.com/rohanrao/formula-1-world-championship-1950-2020
+#or from my Git repo
+#
+# And change the path to the files
+
+# Get the data
+df_constructors <- read.csv("f1db/constructors.csv")
+df_constructors_standings <- read.csv("f1db/constructor_standings.csv")
+df_drivers <- read.csv("f1db/drivers.csv")
+df_driver_standings <- read.csv("f1db/driver_standings.csv")
+df_races <- read.csv("f1db/races.csv")
+df_results <- read.csv("f1db/results.csv")
+df_qualifying <- read.csv("f1db/qualifying.csv")
+df_status <- read.csv("f1db/status.csv")
+
+#merge datasets, rename columns and cleaning datasets
+
+df <- merge(df_results, df_drivers, by=c("driverId"), all.x = T)
+      df <- df[, !(colnames(df) %in% c("url", "forename", "number.y", "number.x", "fastestLap", "milliseconds",
+                                       "time", "positionText", "code", "position", "rank"))]
+      df <- rename(df,c("nationality" = "driver_natio"))
+      
+      
+df <- merge(df, df_status, by=c("statusId"), all.x = T)
+      df <- df[, !(colnames(df) %in% c("statusId"))]
+      
+
+df <- merge(df, df_constructors, by=c("constructorId"), all.x = T)
+      df <- df[, !(colnames(df) %in% c("url", "constructorRef"))]
+      df <- rename(df,c("nationality" = "team_nat", "name" = "team_name"))
+      
+
+df <- merge(df, df_races, by=c("raceId"), all.x = T)
+      df <- df[, !(colnames(df) %in% c("url", "time", "date", "circuitId", "round"))]
+      df <- rename(df,c("name" = "track_name"))
+      
+
+df <- merge(df, df_qualifying, by=c("raceId", "driverId", "constructorId"), all.x = T)
+      df <- df[, !(colnames(df) %in% c("qualifyId", "number"))]
+      df <- rename(df,c("position" = "qualy_pos"))
+      
+
+df <- merge(df, df_driver_standings, by=c("raceId", "driverId"), all.x = T)
+      df <- df[, !(colnames(df) %in% c("driverStandingsId", "positionText", "position", "wins", "points.y"))]
+            df <- rename(df,c("points.x" = "p_earn_race_d"))
+
+
+df <- merge(df, df_constructors_standings, by=c("raceId","constructorId"), all.x = T)
+      df <- df[, !(colnames(df) %in% c("constructorStandingsId", "constructorId", "raceId", "positionText", "resultId", "driverId"))]
+            df <- rename(df,c("points" = "total_p_by_teams", "position" = "team_pos_after_r"))
+
+```           
+            
+            
+            
+```{r, echo=FALSE, include=FALSE}
+
+#filter for drivers in 2021
+df <- df %>% filter(driverRef == "raikkonen" | driverRef == "giovinazzi" | driverRef == "alonso"
+                    | driverRef == "ocon" | driverRef == "vettel" | driverRef == "stroll"
+                    | driverRef == "max_verstappen" | driverRef == "perez" | driverRef == "mazepin"
+                    | driverRef == "mick_schumacher" | driverRef == "ricciardo" & driverRef == "norris"
+                    | driverRef == "hamilton" | driverRef == "bottas" | driverRef == "latifi"
+                    | driverRef == "russell" | driverRef == "gasly" | driverRef == "tsunoda"
+                    | driverRef == "leclerc" | driverRef == "sainz")
+
+#remove unnecessary observations
+rm(df_constructors, df_constructors_standings, df_drivers, df_qualifying, df_races, df_results, df_status, df_driver_standings)
+
+```
+
+```{r, echo=FALSE, include=FALSE}
+
+#data summary
+df %>% dplyr::select(grid, positionOrder, p_earn_race_d, qualy_pos, total_p_by_teams) %>% summary()
+
+```
+
+
+
+```{r, echo=FALSE, include=FALSE}
+
+#Create data for earnings
+driverRef <- c("raikkonen","giovinazzi","alonso", "ocon", "vettel", "stroll","max_verstappen",
+              "perez","mazepin", "mick_schumacher", "ricciardo", "norris", "hamilton", "bottas",
+              "latifi", "russell", "gasly", "tsunoda",  "leclerc", "sainz")
+y2021 <- c(10000000, 1000000, 25000000, 5000000, 15000000, 1915000, 42000000, 18000000, 1000000, 1000000,
+          10000000, 9000000, 62000000, 10000000, 1000000, 1000000, 5000000, 500000, 12000000, 8000000)
+y2020 <- c(10000000, 350000, 1, 6000000, 57000000, 2400000, 26000000, 6000000, 1, 1, 32000000, 2400000,
+          76000000, 15000000, 1200000, 1200000, 2400000, 1, 15000000, 7000000)
+y2019 <- c(4500000, 230000, 1, 1, 45000000, 1200000, 13500000, 3500000, 1, 1, 17000000, 260000, 57000000,
+          12000000, 1, 180000, 1400000, 1, 3500000, 3300000)
+y2018 <- c(40000000, 1, 30000000, 3000000, 60000000, 1800000, 10000000, 5000000, 1, 1, 6500000, 1, 50000000,
+          8500000, 1, 1, 400000, 1, 150000, 750000)
+y2017 <- c(17000000, 1, 40000000, 185000, 50000000, 1800000, 3000000, 2500000, 1, 1, 6500000, 1, 41000000, 
+          8500000, 1, 1, 1, 1, 1, 750000)
+y2016 <- c(16000000, 1, 40000000, 1, 50000000, 1, 650000, 2000000, 1, 1, 6500000, 1, 41000000, 3500000,
+          1, 1, 1, 1, 1, 650000)
+y2015 <- c(26000000, 1, 40000000, 1, 50000000, 1, 512000, 3200000, 1, 1, 3710000, 1, 41000000, 1100000,
+          1, 1, 1, 1, 1, 370000)
+y2014 <- c(31700000, 1, 31700000, 1, 31700000, 1, 1, 4300000, 1, 1, 1100000, 1, 28800000, 1440000,
+          1, 1, 1, 1, 1, 1)
+
+# create earnings info tables by year to be able to merge them to df
+EI2021 <- data.frame(driverRef, y2021)
+EI2020 <- data.frame(driverRef, y2020)
+EI2019 <- data.frame(driverRef, y2019) 
+EI2018 <- data.frame(driverRef, y2018)
+EI2017 <- data.frame(driverRef, y2017)
+EI2016 <- data.frame(driverRef, y2016)
+EI2015 <- data.frame(driverRef, y2015)
+EI2014 <- data.frame(driverRef, y2014)
+
+#remove unnecessary data
+rm(y2014, y2015, y2016, y2017, y2018, y2019, y2020, y2021, driverRef)
+
+```
+
+
+```{r, echo=FALSE, include=FALSE}
+
+#filter for the Hybrid area and separate df by year
+df <- df %>% filter(year >= 2014)
+
+df2021 <- df %>% filter(year == 2021)
+df2020 <- df %>% filter(year == 2020)
+df2019 <- df %>% filter(year == 2019)
+df2018 <- df %>% filter(year == 2018)
+df2017 <- df %>% filter(year == 2017)
+df2016 <- df %>% filter(year == 2016)
+df2015 <- df %>% filter(year == 2015)
+df2014 <- df %>% filter(year == 2014)
+
+#merege data frames and rename the earnings column
+df2021 <- merge(df2021, EI2021, by=c("driverRef"), all.x = T)
+df2021 <- rename(df2021,c("y2021" = "earn/year"))
+
+df2020 <- merge(df2020, EI2020, by=c("driverRef"), all.x = T)
+df2020 <- rename(df2020,c("y2020" = "earn/year"))
+
+df2019 <- merge(df2019, EI2019, by=c("driverRef"), all.x = T)
+df2019 <- rename(df2019,c("y2019" = "earn/year"))
+
+df2018 <- merge(df2018, EI2018, by=c("driverRef"), all.x = T)
+df2018 <- rename(df2018,c("y2018" = "earn/year"))
+
+
+df2017 <- merge(df2017, EI2017, by=c("driverRef"), all.x = T)
+df2017 <- rename(df2017,c("y2017" = "earn/year"))
+
+df2016 <- merge(df2016, EI2016, by=c("driverRef"), all.x = T)
+df2016 <- rename(df2016,c("y2016" = "earn/year"))
+
+df2015 <- merge(df2015, EI2015, by=c("driverRef"), all.x = T)
+df2015 <- rename(df2015,c("y2015" = "earn/year"))
+
+df2014 <- merge(df2014, EI2014, by=c("driverRef"), all.x = T)
+df2014 <- rename(df2014,c("y2014" = "earn/year"))
+
+#merege all into one df
+df <- rbind(df2014, df2015, df2016, df2017, df2018, df2019, df2020, df2021)
+
+#remove unnecessary data
+rm(df2014, df2015, df2016, df2017, df2018, df2019, df2020, df2021, EI2014, EI2015, EI2016, EI2017, EI2018, EI2019,
+   EI2020, EI2021)
+
+
+#Create variables for later analysis
+df <- df %>% mutate(lnwage=log(`earn/year`)) %>% 
+             mutate(age = (2021 - year(dob)))
+
+```
+
+
+```{r, echo=FALSE, include=FALSE}
+
+#linear regression on log(wage) and driver age
+reg1 <- feols( lnwage ~ age , data = df , vcov = 'hetero' )
+
+#reg1 + control with the points earned by the driver
+reg2 <- feols( lnwage ~ age + p_earn_race_d, data = df , vcov = 'hetero' )
+
+#linear regression on log(wage) and driver earned position on race
+reg3 <- feols( lnwage ~ positionOrder , data = df , vcov = 'hetero' )
+
+#linear regression on log(wage) and at which team the driver race
+reg4 <- feols( lnwage ~ team_name, data = df , vcov = 'hetero' )
+
+#similar to reg3, but a control for how well the team perform next to the driver 
+reg5 <- feols( lnwage ~ positionOrder + team_pos_after_r, data = df , vcov = 'hetero' )
+
+#reg5 + age and different teams
+reg6 <- feols(lnwage ~ age + team_name + team_pos_after_r , data = df , vcov = 'hetero' )
+
+```
+
+
+```{r, echo=FALSE, out.width="50%"}
+
+# Summarize findings:
+report <- c("(age)" = "age",
+                   "lnwage" = "log Earnings per year",
+                   "positionOrder" = "Finish race position",
+                   "team_pos_after_r" = "Team finish pos. after race",
+                   "driver_natio" = "Driver nationalitys",
+                   "team_name" = "Name of the team")
+
+style_noHeaders = style.tex(var.title = "", fixef.title = "", stats.title = " ")
+
+
+kable( etable( reg1 , reg2 , reg4 , reg6, 
+        title = 'Average scores',
+        dict = report,
+        se.below = T,
+        coefstat = 'se',
+        fitstat = c('n','r2'),
+        se.row = F,
+        depvar = F ), 
+        col.names = c('(1)','(2)','(4)', '(6)'),
+        caption = 'Models to uncover relation between log(wage) and other variables')
+
+```
+
+
+## Analysis
+This assignment aimed to prove that the earned points or in other words the race results have a clear relationship with the reward the driver gets year by year. Interestingly the data shows different. The 3rd regression column's R2 presents that the relationship is too low. This is true for the 5th regression where the assumption is similar to the 3rd regression, but there is an extra control with the finish position of the team. This is a very interesting result, since in F1 the better a team finishes a season the more money they get back from the Formula 1 television rights. So, every team should focus on giving seat better drivers to reach an overall higher-finish score.
+Maybe a reason for that is the big difference in age between the drivers. The smaller teams are more likely to hire talented young drivers for less money. This strategy is risky since they need more attention and help, but in some cases, it has rewards like Max Verstappen and Lando Norris. Other teams hire the older drivers, who are more stable but demand much more salary. This is shown by regression 1. As the drivers' age increase by 1 year, they get 20.75% higher wages.
+
+```{r, echo=FALSE, warning=FALSE, fig.width=8, fig.height = 3, fig.align="center" }
+
+#Earnings Diff. as Drivers age
+p1 <- ggplot(data = df, aes(x = age, y = lnwage)) +
+  geom_point() + 
+  geom_smooth(method="loess" , formula = y ~ x ) +
+  theme_minimal() +
+  labs(title="Earnings Diff. as Drivers age" ,x = "Age",y = "ln(driver earnings per year)")
+
+#Earnings Diff. in different seasons
+p2 <- ggplot(data = df, aes(x = year, y = lnwage)) +
+  geom_point() + 
+  geom_smooth(method="loess" , formula = y ~ x ) +
+  scale_y_continuous(limits = c(5.5,18) , breaks = seq(6, 18, by = 4)) +
+  theme_minimal() +
+  labs(title="Earnings Diff. in different seasons" ,x = "years",y = "ln(driver earnings per year)")
+
+figs1 <- ggarrange(p1, p2,  hjust = -0.6, ncol = 2, nrow = 1)
+figs1
+
+```
+
+The log(wage) differences by age are also shown by this graph.The model used to visualize the trend and values at the same time.
+After the young drivers join in F1 and spend a few years in the sport, they tend to earn less, since there is a lot of drivers who perform worse than the home team expects. The extreme values on the left side show the natural talents, who after a few years earn as much as world champion partners, like Verstappen. On the right side of the Graph, we can see a slight drop in the wage. A reason for that could be that the reflex and other skills become slower as they age and they perform worse. However, on the other second graph, we can see that the overall payment by the teams is quite constant, so the teams spend the same amount on drivers together. One reason for that they change the drivers between each other.
+
+
+
+```{r, echo=FALSE, warning=FALSE, fig.width=8, fig.height = 3, fig.align="center" }
+
+#Drivers' earnings change in years
+p3 <- gf_point(year ~ lnwage, color = ~ surname, alpha = 0.5, data = df) +
+  geom_smooth(method="loess" , formula = y ~ x ) +
+  labs(x = "ln(driver earnings per year)",y = "Year") +
+  scale_x_continuous(limits = c(11.5,19) , breaks = seq(10, 18, by = 2)) +
+  theme_minimal() +
+  labs(title="Drivers' earnings change in years")
+p3
+
+```
+
+This graph shows us how the drivers' wages changed over the years. The dramatic changes are thanks to factors like retirement in the case of Alonso and team changes by the drivers. This is closely related to the 4th regression, which shows how the wages of the drivers change as they switch teams. The results of the regression are not so surprising. As the drivers switch to top teams like Mercedes AMG, Red Bull, McLaren, and Scuderia Ferrari, they earn sometimes nearly 3 times more than earlier. Small teams like Torro Rosso, Williams, Haas, and Marussia are the other way around, they pay 2-3 times less than the average.
+
+
+
+```{r, echo=FALSE, warning=FALSE, fig.width=8, fig.height = 3, fig.align="center" }
+
+#who earned more
+allearnings <- df %>%
+  group_by(surname) %>%
+  dplyr::summarise(ln_total_earnings = sum(lnwage))
+
+#who scored more
+allpoints <- df %>%
+  group_by(surname) %>%
+  dplyr::summarise(total_points = sum(p_earn_race_d))
+
+#merge data frames
+allpoints <- merge(allpoints, allearnings, by=c("surname"), all.x = T)
+
+#Relationship between earned points and wage
+p7 <- ggplot(data = allpoints, aes(x = total_points, y = ln_total_earnings)) +
+  geom_point() + 
+  geom_smooth(method="loess", , formula = y ~ x ) +
+  labs(title="Relationship between earned points and wage" ,x = "Earned points",y = "ln(driver earnings per year)")
+p7
+
+```
+## Causal interpretation
+As the last Graph show, everything has a top-end. The model used to visualize the trend and values at the same time. The good talented drivers could reach their highest possible salary as they perform well at a small or middle team and tried to contract with one of the top constructors. Interestingly the position and the points the driver earns race by race is not that correlated with the wage of the drivers. Maybe this could be thanks to the fact that Mercedes Petronas AMG dominated the Hybrid era with 8 championship-winner cars with Lewis Hamilton. Or another reason could be the fact that Formula 1 is a technical sport. So, maybe the driver race constant on a high level, but the car is not capable of more. A good example is George Russel, who did an amazing job at Williams and from 2022 he will race with Hamilton at Mercedes.
+
+## Conclusion
+After the analysis, we can say that in formula one money speaks. There are many factors we are not able to see, like how supported a driver is (how much extra money he can bring to the team), politics and others. A prove of that many talented children from smaller categories like Formula 2 and 3 could not race in higher categories, because they do not have the support, but they are on the podium all the time.
+This is sad, but not new in the motorsport world. It was and will be the entertainment of the wealthy people.
+
+## Appendix
+
+Here you can see the additional charts
+
+## Chart1: Prove of data error
+
+```{r, echo=FALSE, warning=FALSE, fig.width=8, fig.height = 3, fig.align="center" }
+
+#No.wins per team
+winConstructors<- df %>% 
+  filter(wins == 1) %>% 
+  group_by(team_name) %>% 
+  dplyr::summarize(count=n()) %>% 
+  filter(count>0) %>%
+  ggplot(aes(x=reorder(team_name, count),y= count,fill=count)) +
+  geom_bar(stat='identity',color='white',size=.1) + 
+  theme_minimal() +
+  coord_flip() + 
+  guides(fill=guide_legend(ncol=3)) + 
+theme(legend.position = "none")+ 
+  labs(title="Number of victories per Constructor") + guides(fill=F)
+winConstructors
+
+```
+
+
+## Chart2
+
+```{r, echo=FALSE, warning=FALSE, fig.width=8, fig.height = 3, fig.align="center" }
+
+#Teams total payment of drivers
+p4 <- gf_point(team_name ~ lnwage, color = ~ year, alpha = 0.5, data = df) +
+  labs(x = "ln(driver earnings per year)",y = "F1 teams") +
+  scale_x_continuous(limits = c(11.5,19) , breaks = seq(10, 18, by = 2)) +
+  theme_minimal() +
+  labs(title="Teams total payment on drivers")
+p4
+
+```
+
+## Chart3
+
+```{r, echo=FALSE, warning=FALSE, fig.width=8, fig.height = 3, fig.align="center" }
+  
+#create table for max earned point and total payed wages for the teams
+constpoints <- df %>%
+  group_by(team_name) %>%
+  dplyr::summarise(total_points = sum(total_p_by_teams))
+
+constpayments <- df %>%
+  group_by(team_name) %>%
+  dplyr::summarise(ln_total_payment = sum(lnwage))
+
+#merge them
+constpoints <- merge(constpoints, constpayments, by=c("team_name"), all.x = T)
+
+#Total Constructor Points
+p8 <- constpoints %>%
+  ggplot(aes(x = reorder(team_name, -total_points), y = ln_total_payment, fill = team_name)) +
+  geom_col(color = "black") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45)) +
+  theme(legend.position = "none")+
+  labs(title = "Total Constructor Points",
+       x = "Constructor", y= "ln(total payment)")
+p8
+
+```
+
+
+## Chart4
+
+```{r, echo=FALSE, warning=FALSE, fig.width=8, fig.height = 3, fig.align="center" }
+
+#total earnings 
+driver_total <- df %>% 
+  group_by(surname, driver_natio) %>% 
+  mutate(total_earnings = sum(lnwage))
+
+#Total earnings per Drivers
+p5 <-ggplot(data=driver_total) +
+     geom_bar(mapping=aes(x=total_earnings, y=reorder(surname, total_earnings), fill=surname), stat='identity') +
+     theme_minimal() +
+     labs(title="Total earnings per Drivers" ,x = "ln(driver earnings per year)" ,y = "Drivers") + guides(fill=F)
+
+p5
+
+```
+
+## Chart5
+
+```{r, echo=FALSE, warning=FALSE, fig.width=8, fig.height = 3, fig.align="center" }
+
+#No. wins by driver
+winsBar<-df %>% 
+  dplyr::filter(positionOrder == 1) %>% 
+  dplyr::group_by(driverRef, track_name) %>% 
+  dplyr::summarize(count=n()) %>%
+  dplyr::mutate(allWins = sum(count)) %>% 
+  dplyr::filter(allWins>1) %>%
+  ggplot(aes(x=reorder(driverRef, allWins),y= count)) +
+  geom_bar(aes(fill=track_name),stat='identity',color='white',size=.1) + 
+  theme_minimal() +
+  coord_flip() + 
+  scale_fill_manual(name="",values = viridis::viridis(71)) +
+  guides(fill=guide_legend(ncol=5)) + 
+  theme(legend.position = "none")+ 
+  labs(title="Number of victories per Driver")
+winsBar
+
+```
